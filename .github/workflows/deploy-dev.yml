@@ -1,0 +1,139 @@
+# ============================================================================
+# Deploy to Dev - Auto-deploy on merge to main
+# ============================================================================
+# Triggers automatically when PRs are merged to main
+# Builds once, deploys to Dev environment
+# ============================================================================
+
+name: Deploy to Dev
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+env:
+  CI: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Build and Push Container Image
+  # --------------------------------------------------------------------------
+  
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+        
+      - name: Build application
+        run: npm run build --if-present
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=dev-
+            type=raw,value=dev-latest
+            
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # --------------------------------------------------------------------------
+  # Deploy to Dev Environment
+  # --------------------------------------------------------------------------
+  
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
+    environment:
+      name: development
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Deploy to Dev
+        id: deploy
+        run: |
+          echo "Deploying to Dev environment..."
+          echo "Image: ${{ needs.build.outputs.image-tag }}"
+          # Add your deployment commands here
+          # Examples:
+          # - kubectl apply -f k8s/dev/
+          # - terraform apply -auto-approve
+          # - aws ecs update-service ...
+          # - vercel --prod
+          echo "url=https://dev.example.com" >> $GITHUB_OUTPUT
+          
+      - name: Verify deployment
+        run: |
+          echo "Running smoke tests against Dev..."
+          # Add health check or smoke test commands
+          # curl -f https://dev.example.com/health || exit 1
+
+  # --------------------------------------------------------------------------
+  # Notify on Completion
+  # --------------------------------------------------------------------------
+  
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [build, deploy-dev]
+    if: always()
+    
+    steps:
+      - name: Send notification
+        run: |
+          if [[ "${{ needs.deploy-dev.result }}" == "success" ]]; then
+            echo "::notice::Successfully deployed to Dev environment!"
+          else
+            echo "::error::Deployment to Dev failed!"
+          fi
+          # Add Slack/Discord/Email notification here if desired
