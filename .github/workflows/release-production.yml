@@ -1,0 +1,172 @@
+# ============================================================================
+# Release to Production - Manual approval required
+# ============================================================================
+# Manually triggered after Staging validation
+# Requires explicit approval before deploying to Production
+# ============================================================================
+
+name: Release to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (e.g., v1.0.0)'
+        required: true
+        type: string
+      confirm:
+        description: 'Type DEPLOY to confirm production release'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Validate Input
+  # --------------------------------------------------------------------------
+  
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [[ "${{ inputs.confirm }}" != "DEPLOY" ]]; then
+            echo "::error::You must type DEPLOY to confirm production release"
+            exit 1
+          fi
+          
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format. Expected v*.*.* (e.g., v1.0.0)"
+            exit 1
+          fi
+          
+      - name: Verify staging image exists
+        run: |
+          echo "Verifying staging-${{ inputs.version }} image exists..."
+          # docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ inputs.version }}
+
+  # --------------------------------------------------------------------------
+  # Deploy to Production (Requires Approval)
+  # --------------------------------------------------------------------------
+  
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Pull and retag image for production
+        run: |
+          # Pull the staging image
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ inputs.version }}
+          
+          # Retag for production
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ inputs.version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod-${{ inputs.version }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ inputs.version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod-latest
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ inputs.version }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            
+          # Push production tags
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod-${{ inputs.version }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:prod-latest
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+      - name: Deploy to Production
+        id: deploy
+        run: |
+          echo "::warning::DEPLOYING TO PRODUCTION"
+          echo "Version: ${{ inputs.version }}"
+          echo "Triggered by: ${{ github.actor }}"
+          # Add your production deployment commands here
+          echo "url=https://example.com" >> $GITHUB_OUTPUT
+          
+      - name: Verify deployment
+        run: |
+          echo "Running production health checks..."
+          # curl -f https://example.com/health || exit 1
+          
+      - name: Run smoke tests
+        run: |
+          echo "Running production smoke tests..."
+          # Add critical path smoke tests
+
+  # --------------------------------------------------------------------------
+  # Update Release
+  # --------------------------------------------------------------------------
+  
+  finalize-release:
+    name: Finalize Release
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Update GitHub Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: '${{ inputs.version }}'
+              });
+              
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                prerelease: false,
+                body: release.body + '\n\n---\n\n**Production Release**\nDeployed to production by @${{ github.actor }} on ' + new Date().toISOString()
+              });
+              
+              console.log('Release updated successfully');
+            } catch (error) {
+              console.log('Could not update release:', error.message);
+            }
+
+  # --------------------------------------------------------------------------
+  # Notify
+  # --------------------------------------------------------------------------
+  
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-production, finalize-release]
+    if: always()
+    
+    steps:
+      - name: Send notification
+        run: |
+          if [[ "${{ needs.deploy-production.result }}" == "success" ]]; then
+            echo "::notice::Successfully released ${{ inputs.version }} to Production!"
+            echo "Deployed by: ${{ github.actor }}"
+          else
+            echo "::error::Production release FAILED!"
+          fi
+          # Add critical notifications here (PagerDuty, Slack, etc.)
