@@ -1,0 +1,122 @@
+# ============================================================================
+# CODEOWNERS - Balancing Rock Project Template
+# ============================================================================
+# This file defines code ownership for automatic review assignment.
+# Owners are automatically requested for review when someone opens a PR
+# that modifies files they own.
+#
+# IMPORTANT: Update @YOUR-USERNAME with your actual GitHub username
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# DEFAULT OWNER - Catches everything not matched below
+# ----------------------------------------------------------------------------
+# The owner(s) below will be the default owners for everything in the repo.
+# Unless a later match takes precedence, these owners will be requested for
+# review when someone opens a pull request.
+
+*                                   @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# INFRASTRUCTURE & CI/CD
+# ----------------------------------------------------------------------------
+# Critical infrastructure changes require core team review
+
+/.github/                           @YOUR-USERNAME
+/infrastructure/                    @YOUR-USERNAME
+/terraform/                         @YOUR-USERNAME
+/k8s/                               @YOUR-USERNAME
+Dockerfile                          @YOUR-USERNAME
+docker-compose*.yml                 @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# SECURITY-SENSITIVE FILES
+# ----------------------------------------------------------------------------
+# Security configurations require security team review
+
+/.github/workflows/                 @YOUR-USERNAME
+/security/                          @YOUR-USERNAME
+*.env.example                       @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# DOCUMENTATION
+# ----------------------------------------------------------------------------
+# Documentation changes
+
+/docs/                              @YOUR-USERNAME
+*.md                                @YOUR-USERNAME
+CHANGELOG.md                        @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# DEPENDENCIES
+# ----------------------------------------------------------------------------
+# Dependency changes require careful review
+
+package.json                        @YOUR-USERNAME
+package-lock.json                   @YOUR-USERNAME
+requirements.txt                    @YOUR-USERNAME
+Pipfile                             @YOUR-USERNAME
+Pipfile.lock                        @YOUR-USERNAME
+go.mod                              @YOUR-USERNAME
+go.sum                              @YOUR-USERNAME
+Cargo.toml                          @YOUR-USERNAME
+Cargo.lock                          @YOUR-USERNAME
+Gemfile                             @YOUR-USERNAME
+Gemfile.lock                        @YOUR-USERNAME
+pom.xml                             @YOUR-USERNAME
+build.gradle                        @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# SOURCE CODE BY DIRECTORY
+# ----------------------------------------------------------------------------
+# Add team-specific ownership patterns below
+# Example:
+# /src/api/                         @backend-team
+# /src/frontend/                    @frontend-team
+# /src/shared/                      @YOUR-USERNAME
+
+/src/                               @YOUR-USERNAME
+/lib/                               @YOUR-USERNAME
+/app/                               @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# TESTS
+# ----------------------------------------------------------------------------
+
+/tests/                             @YOUR-USERNAME
+/test/                              @YOUR-USERNAME
+/__tests__/                         @YOUR-USERNAME
+*.test.*                            @YOUR-USERNAME
+*.spec.*                            @YOUR-USERNAME
+
+# ----------------------------------------------------------------------------
+# CONFIGURATION FILES
+# ----------------------------------------------------------------------------
+
+.gitignore                          @YOUR-USERNAME
+.editorconfig                       @YOUR-USERNAME
+.prettierrc*                        @YOUR-USERNAME
+.eslintrc*                          @YOUR-USERNAME
+tsconfig.json                       @YOUR-USERNAME
+jest.config.*                       @YOUR-USERNAME
+
+# ============================================================================
+# TEAM EXPANSION TEMPLATE
+# ============================================================================
+# When you add team members, create team-based ownership:
+#
+# 1. Create GitHub Teams in your organization:
+#    - @org/core-maintainers
+#    - @org/backend-team
+#    - @org/frontend-team
+#    - @org/devops-team
+#
+# 2. Replace @YOUR-USERNAME with team references:
+#    *                              @org/core-maintainers
+#    /src/api/                      @org/backend-team
+#    /src/frontend/                 @org/frontend-team
+#    /.github/                      @org/devops-team
+#
+# 3. For AI agents, create a team and add their GitHub App:
+#    /src/                          @org/ai-agents @org/core-maintainers
+# ============================================================================
