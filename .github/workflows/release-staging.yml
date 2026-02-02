@@ -1,0 +1,152 @@
+# ============================================================================
+# Release to Staging - Tag-triggered deployment
+# ============================================================================
+# Triggers when a tag matching v*.*.* pattern is pushed
+# Promotes the existing Dev image to Staging
+# ============================================================================
+
+name: Release to Staging
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Validate Release
+  # --------------------------------------------------------------------------
+  
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Releasing version: $VERSION"
+          
+      - name: Validate tag format
+        run: |
+          if [[ ! "${{ steps.version.outputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+            echo "::error::Invalid tag format. Expected v*.*.* or v*.*.*-rc*"
+            exit 1
+          fi
+
+  # --------------------------------------------------------------------------
+  # Deploy to Staging
+  # --------------------------------------------------------------------------
+  
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: validate
+    timeout-minutes: 20
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Pull and retag image for staging
+        run: |
+          # Pull the dev-latest image
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
+          
+          # Retag for staging
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ needs.validate.outputs.version }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest
+            
+          # Push staging tags
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-${{ needs.validate.outputs.version }}
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:staging-latest
+          
+      - name: Deploy to Staging
+        id: deploy
+        run: |
+          echo "Deploying to Staging environment..."
+          echo "Version: ${{ needs.validate.outputs.version }}"
+          # Add your staging deployment commands here
+          echo "url=https://staging.example.com" >> $GITHUB_OUTPUT
+          
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests against Staging..."
+          # Add smoke test commands
+          # curl -f https://staging.example.com/health || exit 1
+
+  # --------------------------------------------------------------------------
+  # Create Release Notes
+  # --------------------------------------------------------------------------
+  
+  release-notes:
+    name: Create Release Notes
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-staging]
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Generate release notes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: release } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: '${{ needs.validate.outputs.version }}',
+              name: 'Release ${{ needs.validate.outputs.version }}',
+              generate_release_notes: true,
+              prerelease: '${{ needs.validate.outputs.version }}'.includes('-rc'),
+              draft: false
+            });
+            console.log(`Created release: ${release.html_url}`);
+
+  # --------------------------------------------------------------------------
+  # Notify
+  # --------------------------------------------------------------------------
+  
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-staging, release-notes]
+    if: always()
+    
+    steps:
+      - name: Send notification
+        run: |
+          if [[ "${{ needs.deploy-staging.result }}" == "success" ]]; then
+            echo "::notice::Successfully released ${{ needs.validate.outputs.version }} to Staging!"
+          else
+            echo "::error::Staging release failed!"
+          fi
